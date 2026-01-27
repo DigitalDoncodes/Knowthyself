@@ -630,7 +630,7 @@ def student_dashboard():
     print(f"🟢 [DEBUG] Query being used: {query}")
 
     # ✅ THIS MUST BE INSIDE THE FUNCTION
-    applications = list(applications_collection.find(query))
+    applications = list(applications_col.find(query))
     print(f"🟢 [DEBUG] Found {len(applications)} applications")
 
     # ✅ Handle no applications safely
