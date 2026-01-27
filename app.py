@@ -609,6 +609,7 @@ def register():
 def student_dashboard():
     """Display all jobs and the student's active application with full tracking."""
     student_id = str(current_user.id)
+
     try:
         student_oid = ObjectId(student_id)
     except Exception:
@@ -616,7 +617,6 @@ def student_dashboard():
 
     print(f"🟢 [DEBUG] Current Student ID: {student_id}")
 
-    # Match both ObjectId and string for user_id, applicant_id, student_id
     query = {
         "$or": [
             {"applicant_id": student_oid},
@@ -629,59 +629,72 @@ def student_dashboard():
 
     print(f"🟢 [DEBUG] Query being used: {query}")
 
-applications = list(applications_collection.find(query))
+    # ✅ THIS MUST BE INSIDE THE FUNCTION
+    applications = list(applications_collection.find(query))
+    print(f"🟢 [DEBUG] Found {len(applications)} applications")
 
-# ✅ If no applications, render safely
-if not applications:
-    print("🟢 No applications found for this student.")
-    return render_template(
-        "student/dashboard.html",
-        applications=[]
-    )
+    # ✅ Handle no applications safely
+    if not applications:
+        print("🟢 No applications found for this student.")
+        return render_template(
+            "student/dashboard.html",
+            applications=[],
+            active_app=None,
+            has_active=False
+        )
 
-for a in applications:
-    job = None  # ✅ IMPORTANT: define first
+    # Process applications
+    for a in applications:
+        job = None
 
-    job_id = a.get("job_id")
-    if job_id:
-        job = jobs_collection.find_one({"_id": job_id})
+        job_id = a.get("job_id")
+        if job_id:
+            job = jobs_collection.find_one({"_id": job_id})
 
-    a["job_title"] = job.get("title") if job else "Unknown Job"
+        a["job_title"] = job.get("title") if job else "Unknown Job"
 
-    # ✅ Ensure application_time exists (fallback to created_at or now)
-    if not a.get("application_time"):
-        a["application_time"] = a.get("created_at") or local_dt_now()
+        # Ensure application_time exists
+        if not a.get("application_time"):
+            a["application_time"] = a.get("created_at") or local_dt_now()
 
-    # progress bar stage tracking
-    stages = ["submitted", "under_review", "corrections_needed", "approved", "rejected"]
-    a["status_index"] = stages.index(a.get("status", "submitted")) if a.get("status") in stages else 0
+        # Progress bar stage tracking
+        stages = ["submitted", "under_review", "corrections_needed", "approved", "rejected"]
+        a["status_index"] = (
+            stages.index(a.get("status"))
+            if a.get("status") in stages else 0
+        )
 
-    # Format time fields
-    a["deadline_str"] = utc_to_ist_str(a.get("deadline"))
-    a["resume_upload_ist"] = utc_to_ist_str(a.get("resume_upload_time"))
+        # Format time fields
+        a["deadline_str"] = utc_to_ist_str(a.get("deadline"))
+        a["resume_upload_ist"] = utc_to_ist_str(a.get("resume_upload_time"))
 
-    # --- Identify active application ---
+    # ✅ Identify active application (OUTSIDE loop)
     active_app = next(
-        (a for a in applications if a.get("status") in (
-            "submitted", "under_review", "corrections_needed", "upload_required"
-        )),
+        (
+            a for a in applications
+            if a.get("status") in (
+                "submitted",
+                "under_review",
+                "corrections_needed",
+                "upload_required",
+            )
+        ),
         None
     )
+
     has_active = bool(active_app)
+    print(f"🟢 [DEBUG] Active Application Found: {has_active}")
 
-    print(f"🟢 [DEBUG] Active Application Found: {bool(active_app)}")
-
+    # ✅ FINAL return (ONLY ONE)
     return render_template(
         "student_dashboard.html",
-        jobs=jobs,
         applications=applications,
         active_app=active_app,
         has_active=has_active,
         current_user=current_user,
         timedelta=timedelta
     )
-
-class User(UserMixin):
+ class User(UserMixin):
     def __init__(self, data):
         self.id = str(data.get("_id", data.get("email")))
         self.email = data.get("email")
