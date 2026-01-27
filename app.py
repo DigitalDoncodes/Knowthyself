@@ -694,7 +694,7 @@ def student_dashboard():
         current_user=current_user,
         timedelta=timedelta
     )
- class User(UserMixin):
+class User(UserMixin):
     def __init__(self, data):
         self.id = str(data.get("_id", data.get("email")))
         self.email = data.get("email")
