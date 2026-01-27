@@ -629,19 +629,24 @@ def student_dashboard():
 
     print(f"🟢 [DEBUG] Query being used: {query}")
 
-    applications = list(applications_col.find(query).sort("application_time", -1))
-    print(f"🟢 [DEBUG] Found {len(applications)} applications for this student.")
+applications = list(applications_collection.find(query))
 
-    for a in applications:
-        print(f"   - App: {a.get('_id')} | Job: {a.get('job_title')} | Status: {a.get('status')} | user_id={a.get('user_id')}")
+# ✅ If no applications, render safely
+if not applications:
+    print("🟢 No applications found for this student.")
+    return render_template(
+        "student/dashboard.html",
+        applications=[]
+    )
 
-    # --- Load jobs ---
-    jobs = [objectid_to_str(j) for j in jobs_col.find().sort("created_at", -1)]
+for a in applications:
+    job = None  # ✅ IMPORTANT: define first
 
-    # --- Enrich application data ---
-    for a in applications:
-     job = jobs_col.find_one({"_id": mongo_objid_from_str(a.get("job_id"))})
-    a["job_title"] = job.get("title") if job else a.get("job_title", "Unknown Job")
+    job_id = a.get("job_id")
+    if job_id:
+        job = jobs_collection.find_one({"_id": job_id})
+
+    a["job_title"] = job.get("title") if job else "Unknown Job"
 
     # ✅ Ensure application_time exists (fallback to created_at or now)
     if not a.get("application_time"):
