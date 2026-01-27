@@ -609,7 +609,6 @@ def register():
 def student_dashboard():
     """Display all jobs and the student's active application with full tracking."""
     student_id = str(current_user.id)
-
     try:
         student_oid = ObjectId(student_id)
     except Exception:
@@ -617,6 +616,7 @@ def student_dashboard():
 
     print(f"🟢 [DEBUG] Current Student ID: {student_id}")
 
+    # Match both ObjectId and string for user_id, applicant_id, student_id
     query = {
         "$or": [
             {"applicant_id": student_oid},
@@ -629,71 +629,53 @@ def student_dashboard():
 
     print(f"🟢 [DEBUG] Query being used: {query}")
 
-    # ✅ THIS MUST BE INSIDE THE FUNCTION
-    applications = list(applications_col.find(query))
-    print(f"🟢 [DEBUG] Found {len(applications)} applications")
+    applications = list(applications_col.find(query).sort("application_time", -1))
+    print(f"🟢 [DEBUG] Found {len(applications)} applications for this student.")
 
-    # ✅ Handle no applications safely
-    if not applications:
-        print("🟢 No applications found for this student.")
-        return render_template(
-            "student/dashboard.html",
-            applications=[],
-            active_app=None,
-            has_active=False
-        )
-
-    # Process applications
     for a in applications:
-        job = None
+        print(f"   - App: {a.get('_id')} | Job: {a.get('job_title')} | Status: {a.get('status')} | user_id={a.get('user_id')}")
 
-        job_id = a.get("job_id")
-        if job_id:
-            job = jobs_collection.find_one({"_id": job_id})
+    # --- Load jobs ---
+    jobs = [objectid_to_str(j) for j in jobs_col.find().sort("created_at", -1)]
 
-        a["job_title"] = job.get("title") if job else "Unknown Job"
+    # --- Enrich application data ---
+    for a in applications:
+     job = jobs_col.find_one({"_id": mongo_objid_from_str(a.get("job_id"))})
+    a["job_title"] = job.get("title") if job else a.get("job_title", "Unknown Job")
 
-        # Ensure application_time exists
-        if not a.get("application_time"):
-            a["application_time"] = a.get("created_at") or local_dt_now()
+    # ✅ Ensure application_time exists (fallback to created_at or now)
+    if not a.get("application_time"):
+        a["application_time"] = a.get("created_at") or local_dt_now()
 
-        # Progress bar stage tracking
-        stages = ["submitted", "under_review", "corrections_needed", "approved", "rejected"]
-        a["status_index"] = (
-            stages.index(a.get("status"))
-            if a.get("status") in stages else 0
-        )
+    # progress bar stage tracking
+    stages = ["submitted", "under_review", "corrections_needed", "approved", "rejected"]
+    a["status_index"] = stages.index(a.get("status", "submitted")) if a.get("status") in stages else 0
 
-        # Format time fields
-        a["deadline_str"] = utc_to_ist_str(a.get("deadline"))
-        a["resume_upload_ist"] = utc_to_ist_str(a.get("resume_upload_time"))
+    # Format time fields
+    a["deadline_str"] = utc_to_ist_str(a.get("deadline"))
+    a["resume_upload_ist"] = utc_to_ist_str(a.get("resume_upload_time"))
 
-    # ✅ Identify active application (OUTSIDE loop)
+    # --- Identify active application ---
     active_app = next(
-        (
-            a for a in applications
-            if a.get("status") in (
-                "submitted",
-                "under_review",
-                "corrections_needed",
-                "upload_required",
-            )
-        ),
+        (a for a in applications if a.get("status") in (
+            "submitted", "under_review", "corrections_needed", "upload_required"
+        )),
         None
     )
-
     has_active = bool(active_app)
-    print(f"🟢 [DEBUG] Active Application Found: {has_active}")
 
-    # ✅ FINAL return (ONLY ONE)
+    print(f"🟢 [DEBUG] Active Application Found: {bool(active_app)}")
+
     return render_template(
         "student_dashboard.html",
+        jobs=jobs,
         applications=applications,
         active_app=active_app,
         has_active=has_active,
         current_user=current_user,
         timedelta=timedelta
     )
+
 class User(UserMixin):
     def __init__(self, data):
         self.id = str(data.get("_id", data.get("email")))
